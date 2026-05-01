@@ -52,12 +52,14 @@ spec:
       runAfter:
         - flake8-lint
 
-    - name: buildah
+    - name: build-image
       taskRef:
-        name: buildah
+        name: openshift-s2i
       params:
         - name: IMAGE
           value: $(params.build-image)
+        - name: APP_NAME
+          value: $(params.app-name)
       workspaces:
         - name: source
           workspace: output
@@ -70,6 +72,9 @@ spec:
       params:
         - name: SCRIPT
           value: |
+            # Deploy using the built image
             oc create deployment $(params.app-name) --image=$(params.build-image) --dry-run=client -o yaml | oc apply -f -
+            # Expose service if needed
+            oc expose deployment $(params.app-name) --port=8080
       runAfter:
-        - buildah
+        - build-image

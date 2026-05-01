@@ -97,28 +97,37 @@ spec:
           python -m unittest discover -v
         fi
 ---
-# Task 5: buildah
+# Task 5: openshift
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
-  name: buildah
+  name: openshift-s2i
 spec:
   workspaces:
     - name: source
   params:
     - name: IMAGE
       type: string
+    - name: APP_NAME
+      type: string
   steps:
     - name: build
-      image: quay.io/buildah/stable
+      image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
       workingDir: $(workspaces.source.path)
-      # Hapus securityContext yang memerlukan privileged
       script: |
         #!/bin/bash
-        # Use vfs driver (doesn't require privileged)
-        buildah bud --storage-driver=vfs -t $(params.IMAGE) .
-        # Push image
-        buildah push --storage-driver=vfs $(params.IMAGE)
+        set -e
+        
+        # Create a new binary build (if doesn't exist)
+        if ! oc get bc $(params.APP_NAME) &>/dev/null; then
+          oc new-build --binary --name=$(params.APP_NAME) --image-stream=python:3.9-ubi8
+        fi
+        
+        # Start build from current directory
+        oc start-build $(params.APP_NAME) --from-dir=. --follow
+        
+        # Tag the resulting image to the desired image stream tag
+        oc tag $(params.APP_NAME):latest $(params.IMAGE)
 ---
 # Task 6: openshift-client
 apiVersion: tekton.dev/v1beta1
