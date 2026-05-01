@@ -101,7 +101,7 @@ spec:
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
-  name: openshift-s2i
+  name: openshift-docker-build
 spec:
   workspaces:
     - name: source
@@ -118,16 +118,14 @@ spec:
         #!/bin/bash
         set -e
         
-        # Create a new binary build (if doesn't exist)
-        if ! oc get bc $(params.APP_NAME) &>/dev/null; then
-          oc new-build --binary --name=$(params.APP_NAME) --image-stream=python:3.9-ubi8
-        fi
+        # Hapus BuildConfig lama jika ada
+        oc delete bc $(params.APP_NAME) --ignore-not-found
         
-        # Start build from current directory
+        # Buat BuildConfig baru dengan strategi Docker (menggunakan Dockerfile)
+        oc new-build --binary --name=$(params.APP_NAME) --strategy=docker
+        
+        # Mulai build dari direktori saat ini (berisi Dockerfile dan source)
         oc start-build $(params.APP_NAME) --from-dir=. --follow
-        
-        # Tag the resulting image to the desired image stream tag
-        oc tag $(params.APP_NAME):latest $(params.IMAGE)
 ---
 # Task 6: openshift-client
 apiVersion: tekton.dev/v1beta1
