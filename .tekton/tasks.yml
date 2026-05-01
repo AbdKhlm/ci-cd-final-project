@@ -1,10 +1,10 @@
----
+# Task 1: cleanup
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: cleanup
 spec:
-  description: This task will clean up a workspace by deleting all the files.
+  description: Clean up workspace by deleting all files
   workspaces:
     - name: source
   steps:
@@ -21,17 +21,56 @@ spec:
         #!/usr/bin/env sh
         set -eu
         echo "Removing all files from ${WORKSPACE_SOURCE_PATH} ..."
-        # Delete any existing contents of the directory if it exists.
         if [ -d "${WORKSPACE_SOURCE_PATH}" ] ; then
-          # Delete non-hidden files and directories
           rm -rf "${WORKSPACE_SOURCE_PATH:?}"/*
-          # Delete files and directories starting with . but excluding ..
           rm -rf "${WORKSPACE_SOURCE_PATH}"/.[!.]*
-          # Delete files and directories starting with .. plus any other character
           rm -rf "${WORKSPACE_SOURCE_PATH}"/..?*
         fi
-
 ---
+# Task 2: git-clone
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: git-clone
+spec:
+  description: Clone git repository
+  workspaces:
+    - name: output
+  params:
+    - name: url
+      type: string
+    - name: revision
+      type: string
+      default: main
+  steps:
+    - name: clone
+      image: alpine/git:latest
+      workingDir: $(workspaces.output.path)
+      script: |
+        #!/bin/sh
+        git config --global --add safe.directory $(workspaces.output.path)
+        git clone $(params.url) .
+        git checkout $(params.revision)
+---
+# Task 3: flake8
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: flake8
+spec:
+  workspaces:
+    - name: source
+  steps:
+    - name: lint
+      image: python:3.9-slim
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/bash
+        pip install flake8
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --max-complexity=10 --max-line-length=127 --statistics
+---
+# Task 4: nose
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
@@ -39,19 +78,49 @@ metadata:
 spec:
   workspaces:
     - name: source
-  params:
-    - name: args
-      description: Arguments to pass to nose
-      type: string
-      default: "-v"
   steps:
-    - name: nosetests
+    - name: test
       image: python:3.9-slim
       workingDir: $(workspaces.source.path)
       script: |
-          #!/bin/bash
-          set -e
-          python -m pip install --upgrade pip wheel
-          pip install -r requirements.txt
-          nosetests $(params.args)
-
+        #!/bin/bash
+        pip install nose nose-spec coverage
+        nosetests -v --with-spec --spec-color --with-coverage --cover-package=app
+---
+# Task 5: buildah
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: buildah
+spec:
+  workspaces:
+    - name: source
+  params:
+    - name: IMAGE
+      type: string
+  steps:
+    - name: build
+      image: quay.io/buildah/stable
+      workingDir: $(workspaces.source.path)
+      securityContext:
+        privileged: true
+      script: |
+        #!/bin/bash
+        buildah bud --storage-driver=vfs -t $(params.IMAGE) .
+        buildah push --storage-driver=vfs $(params.IMAGE)
+---
+# Task 6: openshift-client
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: openshift-client
+spec:
+  params:
+    - name: SCRIPT
+      type: string
+  steps:
+    - name: oc
+      image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
+      script: |
+        #!/bin/sh
+        $(params.SCRIPT)
