@@ -1,0 +1,16 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: ci-pipeline-run
+spec:
+  pipelineRef:
+    name: ci-pipeline
+  workspaces:
+    - name: output
+      persistentVolumeClaim:
+        claimName: oc-lab-pvc
+  params:
+    - name: app-name
+      value: my-app
+    - name: build-image
+      value: image-registry.openshift-image-registry.svc:5000/sn-labs-u11120231526/my-app:latest
